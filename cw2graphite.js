@@ -4,13 +4,20 @@ var config = require('./lib/readConfig.js').readCmdOptions();
 var AWS = require("aws-sdk");
 
 // We'll use the Cloudwatch API
-var cloudwatch = new AWS.CloudWatch(config.awsCredentials);
+var cloudwatch;
+if (config.awsCredentials != undefined) {
+  cloudwatch = new AWS.CloudWatch(config.awsCredentials);
+} else {
+  cloudwatch = new AWS.CloudWatch();
+}
 
 // get the graphite prefix from the metrics config or use cloudwatch as default
 var graphitePrefix = config.metricsConfig.carbonNameSpacePrefix || 'cloudwatch';
 
 // use legacy format, defaulting to false
 var useLegacyFormat = config.metricsConfig.legacyFormat;
+
+var elasticCacheMetrics = config.elasticCacheMetrics
 
 // pulling all of lodash for _.sortBy(), does it matter? Do we even need to sort?
 var _ = require('lodash');
@@ -40,7 +47,10 @@ var metrics = config.metricsConfig.metrics;
 
 getAllELBNames(getELBMetrics);
 getAllRDSInstanceNames(getRDSMetrics);
-getAllElasticCacheNames(getElasticCacheMetrics);
+
+getAllElasticCacheNames(function(nodes) { 
+  getElasticCacheMetrics(nodes, elasticCacheMetrics);
+});
 
 for (var index in metrics) {
     printMetric(metrics[index], start_time, end_time);
@@ -181,19 +191,16 @@ function getAllElasticCacheNames(callback) {
     });
 }
 
+
 // takes array of hashes of ElastiCache CacheClusterId and CacheNodeId and gets a variety metrics
-function getElasticCacheMetrics(nodes) {
+function getElasticCacheMetrics(nodes, elasticCacheMetrics) {
     for (index in nodes) {
         var node = nodes[index];
+
         printMetric(buildMetricQuery('AWS/ElastiCache', 'CPUUtilization', 'Percent', 'Average', node), start_time, end_time);
-      byte_metrics = ['UnusedMemory', 'FreeableMemory', 'NetworkBytesIn', 'NetworkBytesOut'];
-        for (index in byte_metrics) {
-            printMetric(buildMetricQuery('AWS/ElastiCache', byte_metrics[index], 'Bytes', 'Average', node), start_time, end_time);
-        }
-      count_metrics = ['CurrConnections', 'CurrItems', 'Evictions', 'Reclaimed', 'GetHits', 'CacheHits',
-                       'GetMisses', 'CacheMisses', 'GetTypeCmds', 'SetTypeCmds', 'CmdGet', 'CmdSet', 'DeleteHits', 'DeleteMisses', 'NewItems', 'NewConnections' ];
-        for (index in count_metrics) {
-            printMetric(buildMetricQuery('AWS/ElastiCache', count_metrics[index], 'Count', 'Average', node), start_time, end_time);
-        }
+
+        Object.keys(elasticCacheMetrics).forEach(function(unit) {
+          printMetric(buildMetricQuery('AWS/ElastiCache', metrics[unit], unit, 'Average', node), start_time, end_time);
+        })
     }
 }
